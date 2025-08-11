@@ -46,18 +46,21 @@ func WalkAndHash(root string, hashFunc func(string) (string, error)) ([]FileInfo
 		close(results)
 	}()
 
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	walkErr := make(chan error, 1)
+	go func() {
+		walkErr <- filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			paths <- path
 			return nil
-		}
-		paths <- path
-		return nil
-	})
-	close(paths)
+		})
+		close(paths)
+	}()
 
 	for fi := range results {
 		files = append(files, fi)
 	}
 
-	return files, err
+	return files, <-walkErr
 }
