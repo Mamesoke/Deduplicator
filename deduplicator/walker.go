@@ -11,11 +11,32 @@ import (
 
 // WalkAndHash recorre el directorio, agrupa primero por tamaño y solo
 // calcula el hash de los archivos que comparten tamaño con al menos otro.
-func WalkAndHash(root string, hashFunc func(string) (string, error)) ([]FileInfo, error) {
+func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, error)) ([]FileInfo, error) {
+	isExcluded := func(path string) bool {
+		for _, pattern := range excludes {
+			if ok, _ := filepath.Match(pattern, path); ok {
+				return true
+			}
+			if ok, _ := filepath.Match(pattern, filepath.Base(path)); ok {
+				return true
+			}
+		}
+		return false
+	}
+
 	// Primer paso: construir un mapa size -> []path
 	sizeMap := make(map[int64][]string)
 	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
+			return nil
+		}
+		if isExcluded(path) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
 			return nil
 		}
 		info, err := d.Info()
@@ -73,6 +94,9 @@ func WalkAndHash(root string, hashFunc func(string) (string, error)) ([]FileInfo
 		for size, group := range sizeMap {
 			if len(group) > 1 {
 				for _, path := range group {
+					if isExcluded(path) {
+						continue
+					}
 					paths <- job{path: path, size: size}
 				}
 			}
