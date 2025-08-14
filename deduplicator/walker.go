@@ -3,6 +3,7 @@ package deduplicator
 
 import (
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -28,20 +29,20 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 	sizeMap := make(map[int64][]string)
 	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
-		if isExcluded(path) {
-			if d.IsDir() {
+		if d.IsDir() {
+			if isExcluded(path) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if d.IsDir() {
+		if isExcluded(path) {
 			return nil
 		}
 		info, err := d.Info()
 		if err != nil {
-			return nil
+			return err
 		}
 		sizeMap[info.Size()] = append(sizeMap[info.Size()], path)
 		return nil
@@ -69,10 +70,12 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 			for j := range paths {
 				info, err := os.Stat(j.path)
 				if err != nil {
+					log.Printf("error accessing %s: %v", j.path, err)
 					continue
 				}
 				hash, err := hashFunc(j.path)
 				if err != nil {
+					log.Printf("error hashing %s: %v", j.path, err)
 					continue
 				}
 				results <- FileInfo{
