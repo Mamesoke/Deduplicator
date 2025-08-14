@@ -32,7 +32,7 @@ func PrettyPrint(dupes []DuplicateGroup) {
 		fmt.Printf("🔁 Grupo #%d — %d archivos duplicados (Hash: %s)\n", i+1, numFiles, group.Hash)
 		fmt.Printf("    Tamaño por archivo: %d bytes | Total duplicado: %d bytes\n", sizePerFile, wasted)
 
-		sorted := group.Files
+		sorted := append([]FileInfo(nil), group.Files...)
 		sort.Slice(sorted, func(i, j int) bool {
 			return sorted[i].Path < sorted[j].Path
 		})
