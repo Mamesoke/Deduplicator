@@ -2,13 +2,13 @@
 package deduplicator
 
 type FileInfo struct {
-	Path         string
-	Size         int64
-	Hash         string
-	LastModified int64
+	Path         string `json:"path"`
+	Size         int64  `json:"size"`
+	Hash         string `json:"hash"`
+	LastModified int64  `json:"lastModified"`
 }
 
 type DuplicateGroup struct {
-	Hash      string
-	Files     []FileInfo
+	Hash  string     `json:"hash"`
+	Files []FileInfo `json:"files"`
 }

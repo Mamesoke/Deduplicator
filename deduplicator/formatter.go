@@ -7,10 +7,10 @@ import (
 )
 
 type DuplicateReport struct {
-	Groups          []DuplicateGroup `json:"groups"`
-	TotalFiles      int                           `json:"total_duplicated_files"`
-	TotalWasted     int64                         `json:"total_wasted_bytes"`
-	TotalGroups     int                           `json:"total_groups"`
+	Groups      []DuplicateGroup `json:"groups"`
+	TotalFiles  int              `json:"total_duplicated_files"`
+	TotalWasted int64            `json:"total_wasted_bytes"`
+	TotalGroups int              `json:"total_groups"`
 }
 
 // PrettyPrint imprime el resultado formateado para humanos
