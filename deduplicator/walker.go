@@ -4,7 +4,6 @@ package deduplicator
 import (
 	"io/fs"
 	"log"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -25,8 +24,14 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 		return false
 	}
 
-	// Primer paso: construir un mapa size -> []path
-	sizeMap := make(map[int64][]string)
+	type job struct {
+		path    string
+		size    int64
+		modTime int64
+	}
+
+	// Primer paso: construir un mapa size -> []job
+	sizeMap := make(map[int64][]job)
 	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -44,15 +49,14 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 		if err != nil {
 			return err
 		}
-		sizeMap[info.Size()] = append(sizeMap[info.Size()], path)
+		sizeMap[info.Size()] = append(sizeMap[info.Size()], job{
+			path:    path,
+			size:    info.Size(),
+			modTime: info.ModTime().Unix(),
+		})
 		return nil
 	}); err != nil {
 		return nil, err
-	}
-
-	type job struct {
-		path string
-		size int64
 	}
 
 	var (
@@ -68,11 +72,6 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 		go func() {
 			defer wg.Done()
 			for j := range paths {
-				info, err := os.Stat(j.path)
-				if err != nil {
-					log.Printf("error accessing %s: %v", j.path, err)
-					continue
-				}
 				hash, err := hashFunc(j.path)
 				if err != nil {
 					log.Printf("error hashing %s: %v", j.path, err)
@@ -82,7 +81,7 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 					Path:         j.path,
 					Size:         j.size,
 					Hash:         hash,
-					LastModified: info.ModTime().Unix(),
+					LastModified: j.modTime,
 				}
 			}
 		}()
@@ -94,13 +93,13 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 	}()
 
 	go func() {
-		for size, group := range sizeMap {
+		for _, group := range sizeMap {
 			if len(group) > 1 {
-				for _, path := range group {
-					if isExcluded(path) {
+				for _, j := range group {
+					if isExcluded(j.path) {
 						continue
 					}
-					paths <- job{path: path, size: size}
+					paths <- j
 				}
 			}
 		}
