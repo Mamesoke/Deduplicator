@@ -9,10 +9,33 @@ import (
 	"sync"
 )
 
+// WalkAndHash recorre el directorio, agrupa primero por tamaño y solo
+// calcula el hash de los archivos que comparten tamaño con al menos otro.
 func WalkAndHash(root string, hashFunc func(string) (string, error)) ([]FileInfo, error) {
+	// Primer paso: construir un mapa size -> []path
+	sizeMap := make(map[int64][]string)
+	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		sizeMap[info.Size()] = append(sizeMap[info.Size()], path)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	type job struct {
+		path string
+		size int64
+	}
+
 	var (
 		files   []FileInfo
-		paths   = make(chan string)
+		paths   = make(chan job)
 		results = make(chan FileInfo)
 		wg      sync.WaitGroup
 	)
@@ -22,18 +45,18 @@ func WalkAndHash(root string, hashFunc func(string) (string, error)) ([]FileInfo
 	for i := 0; i < workerCount; i++ {
 		go func() {
 			defer wg.Done()
-			for path := range paths {
-				info, err := os.Stat(path)
+			for j := range paths {
+				info, err := os.Stat(j.path)
 				if err != nil {
 					continue
 				}
-				hash, err := hashFunc(path)
+				hash, err := hashFunc(j.path)
 				if err != nil {
 					continue
 				}
 				results <- FileInfo{
-					Path:         path,
-					Size:         info.Size(),
+					Path:         j.path,
+					Size:         j.size,
 					Hash:         hash,
 					LastModified: info.ModTime().Unix(),
 				}
@@ -46,15 +69,14 @@ func WalkAndHash(root string, hashFunc func(string) (string, error)) ([]FileInfo
 		close(results)
 	}()
 
-	walkErr := make(chan error, 1)
 	go func() {
-		walkErr <- filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil
+		for size, group := range sizeMap {
+			if len(group) > 1 {
+				for _, path := range group {
+					paths <- job{path: path, size: size}
+				}
 			}
-			paths <- path
-			return nil
-		})
+		}
 		close(paths)
 	}()
 
@@ -62,5 +84,5 @@ func WalkAndHash(root string, hashFunc func(string) (string, error)) ([]FileInfo
 		files = append(files, fi)
 	}
 
-	return files, <-walkErr
+	return files, nil
 }
