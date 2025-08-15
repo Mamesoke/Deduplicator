@@ -4,6 +4,7 @@ package deduplicator
 import (
 	"io/fs"
 	"log"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -32,9 +33,44 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 
 	// Primer paso: construir un mapa size -> []job
 	sizeMap := make(map[int64][]job)
+	visited := make(map[string]struct{})
 	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return nil
+			}
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(path), target)
+			}
+			target, err = filepath.Abs(target)
+			if err != nil {
+				return nil
+			}
+			target = filepath.Clean(target)
+			if _, ok := visited[target]; ok {
+				return nil
+			}
+			visited[target] = struct{}{}
+			if isExcluded(target) {
+				return nil
+			}
+			info, err := os.Stat(target)
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() {
+				return nil
+			}
+			sizeMap[info.Size()] = append(sizeMap[info.Size()], job{
+				path:    target,
+				size:    info.Size(),
+				modTime: info.ModTime().Unix(),
+			})
+			return nil
 		}
 		if d.IsDir() {
 			if isExcluded(path) {
