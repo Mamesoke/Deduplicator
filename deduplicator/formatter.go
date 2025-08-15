@@ -51,12 +51,30 @@ func PrettyPrint(dupes []DuplicateGroup) {
 
 // JSONPrint imprime el resultado en JSON estructurado
 func JSONPrint(dupes []DuplicateGroup) error {
-	report := DuplicateReport{
-		Groups:      dupes,
-		TotalGroups: len(dupes),
+	// Ordenar los grupos por desperdicio descendente sin mutar la entrada original
+	sorted := make([]DuplicateGroup, len(dupes))
+	copy(sorted, dupes)
+	sort.Slice(sorted, func(i, j int) bool {
+		wasteI := int64(len(sorted[i].Files)-1) * sorted[i].Files[0].Size
+		wasteJ := int64(len(sorted[j].Files)-1) * sorted[j].Files[0].Size
+		return wasteI > wasteJ
+	})
+
+	// Clonar y ordenar los archivos de cada grupo por su ruta
+	for i, group := range sorted {
+		files := append([]FileInfo(nil), group.Files...)
+		sort.Slice(files, func(a, b int) bool {
+			return files[a].Path < files[b].Path
+		})
+		sorted[i].Files = files
 	}
 
-	for _, group := range dupes {
+	report := DuplicateReport{
+		Groups:      sorted,
+		TotalGroups: len(sorted),
+	}
+
+	for _, group := range sorted {
 		n := len(group.Files)
 		if n > 1 {
 			report.TotalFiles += n - 1
