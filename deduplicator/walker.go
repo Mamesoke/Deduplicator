@@ -2,6 +2,7 @@
 package deduplicator
 
 import (
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -15,7 +16,7 @@ const cacheFileName = ".dedupcache.json"
 
 // WalkAndHash recorre el directorio, agrupa primero por tamaño y solo
 // calcula el hash de los archivos que comparten tamaño con al menos otro.
-func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, error)) ([]FileInfo, error) {
+func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, error)) ([]FileInfo, []error) {
 	isExcluded := func(name string) bool {
 		if name == cacheFileName {
 			return true
@@ -30,11 +31,16 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 
 	cachePath := filepath.Join(root, cacheFileName)
 	cache, err := loadCache(cachePath)
+	var (
+		cacheMu sync.RWMutex
+		errs    []error
+		errsMu  sync.Mutex
+	)
 	if err != nil {
 		log.Printf("error loading cache: %v", err)
+		errs = append(errs, fmt.Errorf("loading cache: %w", err))
 		cache = make(map[string]CacheEntry)
 	}
-	var cacheMu sync.RWMutex
 
 	type job struct {
 		path    string
@@ -69,6 +75,9 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 				entries, err := os.ReadDir(dir)
 				if err != nil {
 					log.Printf("error reading %s: %v", dir, err)
+					errsMu.Lock()
+					errs = append(errs, fmt.Errorf("reading %s: %w", dir, err))
+					errsMu.Unlock()
 					dirWG.Done()
 					continue
 				}
@@ -183,6 +192,9 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 					hash, err = hashFunc(j.path)
 					if err != nil {
 						log.Printf("error hashing %s: %v", j.path, err)
+						errsMu.Lock()
+						errs = append(errs, fmt.Errorf("hashing %s: %w", j.path, err))
+						errsMu.Unlock()
 						continue
 					}
 					cacheMu.Lock()
@@ -229,7 +241,8 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 
 	if err := saveCache(cachePath, cache); err != nil {
 		log.Printf("error saving cache: %v", err)
+		errs = append(errs, fmt.Errorf("saving cache: %w", err))
 	}
 
-	return files, nil
+	return files, errs
 }

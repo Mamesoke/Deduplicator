@@ -9,12 +9,12 @@ import (
 
 // collectDuplicates is a helper that wraps WalkAndHash and FindDuplicates.
 func collectDuplicates(
-	walk func(string, []string, func(string) (string, error)) ([]FileInfo, error),
+	walk func(string, []string, func(string) (string, error)) ([]FileInfo, []error),
 	hash func(string) (string, error),
 ) ([]DuplicateGroup, error) {
-	files, err := walk("root", nil, hash)
-	if err != nil {
-		return nil, err
+	files, errs := walk("root", nil, hash)
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 	return FindDuplicates(files), nil
 }
@@ -38,7 +38,7 @@ func TestFindDuplicates(t *testing.T) {
 }
 
 func TestCollectDuplicatesSuccess(t *testing.T) {
-	mockWalk := func(root string, excludes []string, h func(string) (string, error)) ([]FileInfo, error) {
+	mockWalk := func(root string, excludes []string, h func(string) (string, error)) ([]FileInfo, []error) {
 		return []FileInfo{
 			{Path: "a", Size: 1, Hash: "same"},
 			{Path: "b", Size: 1, Hash: "same"},
@@ -57,12 +57,12 @@ func TestCollectDuplicatesSuccess(t *testing.T) {
 
 func TestCollectDuplicatesWalkError(t *testing.T) {
 	walkErr := errors.New("walk error")
-	mockWalk := func(root string, excludes []string, h func(string) (string, error)) ([]FileInfo, error) {
-		return nil, walkErr
+	mockWalk := func(root string, excludes []string, h func(string) (string, error)) ([]FileInfo, []error) {
+		return nil, []error{walkErr}
 	}
 	mockHash := func(path string) (string, error) { return "", nil }
 
-	if _, err := collectDuplicates(mockWalk, mockHash); err != walkErr {
+	if _, err := collectDuplicates(mockWalk, mockHash); !errors.Is(err, walkErr) {
 		t.Fatalf("expected %v, got %v", walkErr, err)
 	}
 }
@@ -83,9 +83,9 @@ func TestWalkAndHashHashError(t *testing.T) {
 		return "ok", nil
 	}
 
-	files, err := WalkAndHash(dir, nil, mockHash)
-	if err != nil {
-		t.Fatalf("WalkAndHash error: %v", err)
+	files, errs := WalkAndHash(dir, nil, mockHash)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d", len(errs))
 	}
 	if len(files) != 1 {
 		t.Fatalf("expected 1 file, got %d", len(files))

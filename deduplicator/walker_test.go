@@ -30,9 +30,9 @@ func TestWalkAndHashExcludes(t *testing.T) {
 		}
 		createFile(t, filepath.Join(dir, "node_modules", "d.txt"), "same")
 
-		files, err := WalkAndHash(dir, []string{".git", "node_modules"}, hash)
-		if err != nil {
-			t.Fatalf("WalkAndHash: %v", err)
+		files, errs := WalkAndHash(dir, []string{".git", "node_modules"}, hash)
+		if len(errs) > 0 {
+			t.Fatalf("WalkAndHash: %v", errs)
 		}
 		if len(files) != 2 {
 			t.Fatalf("expected 2 files, got %d", len(files))
@@ -54,9 +54,9 @@ func TestWalkAndHashExcludes(t *testing.T) {
 		}
 		createFile(t, filepath.Join(dir, "vendor", "c.txt"), "same")
 
-		files, err := WalkAndHash(dir, []string{".git", "node_modules", "vendor"}, hash)
-		if err != nil {
-			t.Fatalf("WalkAndHash: %v", err)
+		files, errs := WalkAndHash(dir, []string{".git", "node_modules", "vendor"}, hash)
+		if len(errs) > 0 {
+			t.Fatalf("WalkAndHash: %v", errs)
 		}
 		if len(files) != 2 {
 			t.Fatalf("expected 2 files, got %d", len(files))
@@ -81,15 +81,15 @@ func TestWalkAndHashCache(t *testing.T) {
 		return "h", nil
 	}
 
-	if _, err := WalkAndHash(dir, nil, hash); err != nil {
-		t.Fatalf("WalkAndHash: %v", err)
+	if _, errs := WalkAndHash(dir, nil, hash); len(errs) > 0 {
+		t.Fatalf("WalkAndHash: %v", errs)
 	}
 	if count != 2 {
 		t.Fatalf("expected 2 hash calls, got %d", count)
 	}
 
-	if _, err := WalkAndHash(dir, nil, hash); err != nil {
-		t.Fatalf("WalkAndHash second: %v", err)
+	if _, errs := WalkAndHash(dir, nil, hash); len(errs) > 0 {
+		t.Fatalf("WalkAndHash second: %v", errs)
 	}
 	if count != 2 {
 		t.Fatalf("expected cache to prevent hashing, got %d calls", count)
