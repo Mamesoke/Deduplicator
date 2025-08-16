@@ -3,6 +3,7 @@ package deduplicator
 import (
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -67,4 +68,30 @@ func TestWalkAndHashExcludes(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestWalkAndHashCache(t *testing.T) {
+	dir := t.TempDir()
+	createFile(t, filepath.Join(dir, "a.txt"), "same")
+	createFile(t, filepath.Join(dir, "b.txt"), "same")
+
+	var count int32
+	hash := func(string) (string, error) {
+		atomic.AddInt32(&count, 1)
+		return "h", nil
+	}
+
+	if _, err := WalkAndHash(dir, nil, hash); err != nil {
+		t.Fatalf("WalkAndHash: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 hash calls, got %d", count)
+	}
+
+	if _, err := WalkAndHash(dir, nil, hash); err != nil {
+		t.Fatalf("WalkAndHash second: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected cache to prevent hashing, got %d calls", count)
+	}
 }
