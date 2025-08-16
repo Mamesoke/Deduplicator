@@ -32,6 +32,8 @@ func main() {
 	flag.Var(&excludes, "exclude", "Patrones o rutas a excluir (puede usarse varias veces)")
 	flag.Parse()
 
+	exitCode := 0
+
 	if *dir == "" {
 		fmt.Println("Uso: dedup-cli -dir=/ruta/a/analizar")
 		os.Exit(1)
@@ -61,7 +63,8 @@ func main() {
 	// Escanear archivos y calcular hashes
 	files, err := deduplicator.WalkAndHash(*dir, []string(excludes), hashFunc)
 	if err != nil {
-		log.Fatalf("Error durante el escaneo: %v", err)
+		log.Printf("Error durante el escaneo: %v", err)
+		exitCode = 1
 	}
 
 	// Buscar duplicados
@@ -69,42 +72,46 @@ func main() {
 
 	if len(dupes) == 0 {
 		fmt.Println("No se encontraron duplicados.")
-		return
-	}
-	/*
-	   // Mostrar resultados
-	   fmt.Printf("Se encontraron %d grupos de duplicados:\n\n", len(dupes))
-	   for i, group := range dupes {
-	   fmt.Printf("Grupo #%d (Hash: %s)\n", i+1, group.Hash)
-	   for _, f := range group.Files {
-	   fmt.Printf("  - %s (%d bytes)\n", f.Path, f.Size)
-	   }
-	   fmt.Println()
-	   }
-	*/
-	switch *format {
-	case "json":
-		if err := deduplicator.JSONPrint(dupes); err != nil {
-			log.Fatalf("Error al generar salida JSON: %v", err)
+	} else {
+		/*
+		   // Mostrar resultados
+		   fmt.Printf("Se encontraron %d grupos de duplicados:\n\n", len(dupes))
+		   for i, group := range dupes {
+		   fmt.Printf("Grupo #%d (Hash: %s)\n", i+1, group.Hash)
+		   for _, f := range group.Files {
+		   fmt.Printf("  - %s (%d bytes)\n", f.Path, f.Size)
+		   }
+		   fmt.Println()
+		   }
+		*/
+		switch *format {
+		case "json":
+			if err := deduplicator.JSONPrint(dupes); err != nil {
+				log.Printf("Error al generar salida JSON: %v", err)
+				exitCode = 1
+				deduplicator.PrettyPrint(dupes)
+			}
+		case "pretty":
+			deduplicator.PrettyPrint(dupes)
+		default:
+			fmt.Printf("Formato no reconocido: %s\n", *format)
+			os.Exit(1)
 		}
-	case "pretty":
-		deduplicator.PrettyPrint(dupes)
-	default:
-		fmt.Printf("Formato no reconocido: %s\n", *format)
-		os.Exit(1)
+
+		if *deleteFlag {
+			removed, err := deduplicator.DeleteDuplicates(dupes, *dryRun)
+			if err != nil {
+				log.Printf("Error al eliminar duplicados: %v", err)
+				exitCode = 1
+			}
+			if *dryRun {
+				fmt.Printf("Se eliminarían %d archivos duplicados.\n", len(removed))
+			} else {
+				fmt.Printf("Se eliminaron %d archivos duplicados.\n", len(removed))
+			}
+		}
 	}
 
-	if *deleteFlag {
-		removed, err := deduplicator.DeleteDuplicates(dupes, *dryRun)
-		if err != nil {
-			log.Fatalf("Error al eliminar duplicados: %v", err)
-		}
-		if *dryRun {
-			fmt.Printf("Se eliminarían %d archivos duplicados.\n", len(removed))
-		} else {
-			fmt.Printf("Se eliminaron %d archivos duplicados.\n", len(removed))
-		}
-	}
 	// Mostrar resultados mejorados
 	/*
 	   totalDuplicatedFiles := 0
@@ -142,4 +149,6 @@ func main() {
 	   fmt.Printf("  - Total de archivos duplicados: %d\n", totalDuplicatedFiles)
 	   fmt.Printf("  - Espacio potencial recuperable: %.2f MB\n", float64(totalWastedBytes)/1024.0/1024.0)
 	*/
+
+	os.Exit(exitCode)
 }
