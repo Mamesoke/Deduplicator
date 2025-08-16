@@ -103,7 +103,13 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 							continue
 						}
 						dirWG.Add(1)
-						dirs <- path
+						// Avoid blocking all workers when channel is full:
+						// try to send, but fall back to a goroutine if the queue is saturated.
+						select {
+						case dirs <- path:
+						default:
+							go func(p string) { dirs <- p }(path)
+						}
 						continue
 					}
 					if isExcluded(name) {
