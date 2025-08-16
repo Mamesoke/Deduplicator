@@ -11,10 +11,15 @@ import (
 	"time"
 )
 
+const cacheFileName = ".dedupcache.json"
+
 // WalkAndHash recorre el directorio, agrupa primero por tamaño y solo
 // calcula el hash de los archivos que comparten tamaño con al menos otro.
 func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, error)) ([]FileInfo, error) {
 	isExcluded := func(name string) bool {
+		if name == cacheFileName {
+			return true
+		}
 		for _, pattern := range excludes {
 			if ok, _ := filepath.Match(pattern, name); ok {
 				return true
@@ -22,6 +27,14 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 		}
 		return false
 	}
+
+	cachePath := filepath.Join(root, cacheFileName)
+	cache, err := loadCache(cachePath)
+	if err != nil {
+		log.Printf("error loading cache: %v", err)
+		cache = make(map[string]CacheEntry)
+	}
+	var cacheMu sync.RWMutex
 
 	type job struct {
 		path    string
@@ -159,10 +172,27 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 				wg.Done()
 			}()
 			for j := range paths {
-				hash, err := hashFunc(j.path)
-				if err != nil {
-					log.Printf("error hashing %s: %v", j.path, err)
-					continue
+				cacheMu.RLock()
+				ce, ok := cache[j.path]
+				cacheMu.RUnlock()
+				var hash string
+				if ok && ce.Size == j.size && ce.ModTime == j.modTime {
+					hash = ce.Hash
+				} else {
+					var err error
+					hash, err = hashFunc(j.path)
+					if err != nil {
+						log.Printf("error hashing %s: %v", j.path, err)
+						continue
+					}
+					cacheMu.Lock()
+					cache[j.path] = CacheEntry{
+						Path:    j.path,
+						Size:    j.size,
+						ModTime: j.modTime,
+						Hash:    hash,
+					}
+					cacheMu.Unlock()
 				}
 				results <- FileInfo{
 					Path:         j.path,
@@ -195,6 +225,10 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 
 	for fi := range results {
 		files = append(files, fi)
+	}
+
+	if err := saveCache(cachePath, cache); err != nil {
+		log.Printf("error saving cache: %v", err)
 	}
 
 	return files, nil
