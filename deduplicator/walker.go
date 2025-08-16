@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
-	"time"
 )
 
 // WalkAndHash recorre el directorio, agrupa primero por tamaño y solo
@@ -29,110 +28,69 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 		modTime int64
 	}
 
-	// Primer paso: construir un mapa size -> []job mediante escaneo manual
+	// Primer paso: construir un mapa size -> []job
 	sizeMap := make(map[int64][]job)
 	visited := make(map[string]struct{})
-	var (
-		sizeMu    sync.Mutex
-		visitedMu sync.Mutex
-	)
-
-	dirs := make(chan string, runtime.NumCPU()*4)
-	var dirWG sync.WaitGroup
-	var workerWG sync.WaitGroup
-
-	scanWorkers := runtime.NumCPU()
-	workerWG.Add(scanWorkers)
-	for i := 0; i < scanWorkers; i++ {
-		go func(id int) {
-			start := time.Now()
-			defer func() {
-				if MeasureTimings {
-					log.Printf("scan worker %d took %v", id, time.Since(start))
-				}
-				workerWG.Done()
-			}()
-			for dir := range dirs {
-				entries, err := os.ReadDir(dir)
-				if err != nil {
-					log.Printf("error reading %s: %v", dir, err)
-					dirWG.Done()
-					continue
-				}
-				for _, entry := range entries {
-					name := entry.Name()
-					path := filepath.Join(dir, name)
-					if entry.Type()&fs.ModeSymlink != 0 {
-						target, err := os.Readlink(path)
-						if err != nil {
-							continue
-						}
-						if !filepath.IsAbs(target) {
-							target = filepath.Join(dir, target)
-						}
-						target, err = filepath.Abs(target)
-						if err != nil {
-							continue
-						}
-						target = filepath.Clean(target)
-						visitedMu.Lock()
-						if _, ok := visited[target]; ok {
-							visitedMu.Unlock()
-							continue
-						}
-						visited[target] = struct{}{}
-						visitedMu.Unlock()
-						if isExcluded(filepath.Base(target)) {
-							continue
-						}
-						info, err := os.Stat(target)
-						if err != nil || info.IsDir() {
-							continue
-						}
-						sizeMu.Lock()
-						sizeMap[info.Size()] = append(sizeMap[info.Size()], job{
-							path:    target,
-							size:    info.Size(),
-							modTime: info.ModTime().Unix(),
-						})
-						sizeMu.Unlock()
-						continue
-					}
-					if entry.IsDir() {
-						if isExcluded(name) {
-							continue
-						}
-						dirWG.Add(1)
-						dirs <- path
-						continue
-					}
-					if isExcluded(name) {
-						continue
-					}
-					info, err := entry.Info()
-					if err != nil {
-						continue
-					}
-					sizeMu.Lock()
-					sizeMap[info.Size()] = append(sizeMap[info.Size()], job{
-						path:    path,
-						size:    info.Size(),
-						modTime: info.ModTime().Unix(),
-					})
-					sizeMu.Unlock()
-				}
-				dirWG.Done()
+	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return nil
 			}
-		}(i)
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(path), target)
+			}
+			target, err = filepath.Abs(target)
+			if err != nil {
+				return nil
+			}
+			target = filepath.Clean(target)
+			if _, ok := visited[target]; ok {
+				return nil
+			}
+			visited[target] = struct{}{}
+			if isExcluded(filepath.Base(target)) {
+				return nil
+			}
+			info, err := os.Stat(target)
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() {
+				return nil
+			}
+			sizeMap[info.Size()] = append(sizeMap[info.Size()], job{
+				path:    target,
+				size:    info.Size(),
+				modTime: info.ModTime().Unix(),
+			})
+			return nil
+		}
+		if d.IsDir() {
+			if isExcluded(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if isExcluded(d.Name()) {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		sizeMap[info.Size()] = append(sizeMap[info.Size()], job{
+			path:    path,
+			size:    info.Size(),
+			modTime: info.ModTime().Unix(),
+		})
+		return nil
+	}); err != nil {
+		return nil, err
 	}
-
-	dirWG.Add(1)
-	dirs <- root
-	go func() {
-		dirWG.Wait()
-		close(dirs)
-	}()
-	workerWG.Wait()
 
 	var (
 		files   []FileInfo
@@ -144,14 +102,8 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 	workerCount := runtime.NumCPU()
 	wg.Add(workerCount)
 	for i := 0; i < workerCount; i++ {
-		go func(id int) {
-			start := time.Now()
-			defer func() {
-				if MeasureTimings {
-					log.Printf("hash worker %d took %v", id, time.Since(start))
-				}
-				wg.Done()
-			}()
+		go func() {
+			defer wg.Done()
 			for j := range paths {
 				hash, err := hashFunc(j.path)
 				if err != nil {
@@ -165,7 +117,7 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 					LastModified: j.modTime,
 				}
 			}
-		}(i)
+		}()
 	}
 
 	go func() {

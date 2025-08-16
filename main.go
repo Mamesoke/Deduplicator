@@ -27,7 +27,6 @@ func main() {
 	hashAlg := flag.String("hash", "sha256", "Algoritmo de hash: sha256 | sha1 | sha512 | md5")
 	deleteFlag := flag.Bool("delete", false, "Eliminar automáticamente los archivos duplicados")
 	dryRun := flag.Bool("dry-run", false, "Simular la eliminación sin borrar archivos")
-	timings := flag.Bool("timings", false, "Mostrar duración de cada goroutine")
 	var excludes = multiFlag{".git", "node_modules", ".github", ".idea", ".vscode", "vendor", "dist", "build", "tmp", "temp", ".venv", "venv"}
 	flag.Var(&excludes, "exclude", "Patrones o rutas a excluir (puede usarse varias veces)")
 	flag.Parse()
@@ -38,10 +37,6 @@ func main() {
 	}
 
 	fmt.Printf("Analizando directorio: %s\n", *dir)
-
-	if *timings {
-		deduplicator.MeasureTimings = true
-	}
 
 	var hashFunc func(string) (string, error)
 	switch *hashAlg {
