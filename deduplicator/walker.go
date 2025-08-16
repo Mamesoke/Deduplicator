@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"time"
 )
 
 // WalkAndHash recorre el directorio, agrupa primero por tamaño y solo
@@ -36,15 +37,21 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 		visitedMu sync.Mutex
 	)
 
-	dirs := make(chan string)
+	dirs := make(chan string, runtime.NumCPU()*4)
 	var dirWG sync.WaitGroup
 	var workerWG sync.WaitGroup
 
 	scanWorkers := runtime.NumCPU()
 	workerWG.Add(scanWorkers)
 	for i := 0; i < scanWorkers; i++ {
-		go func() {
-			defer workerWG.Done()
+		go func(id int) {
+			start := time.Now()
+			defer func() {
+				if MeasureTimings {
+					log.Printf("scan worker %d took %v", id, time.Since(start))
+				}
+				workerWG.Done()
+			}()
 			for dir := range dirs {
 				entries, err := os.ReadDir(dir)
 				if err != nil {
@@ -116,7 +123,7 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 				}
 				dirWG.Done()
 			}
-		}()
+		}(i)
 	}
 
 	dirWG.Add(1)
@@ -137,8 +144,14 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 	workerCount := runtime.NumCPU()
 	wg.Add(workerCount)
 	for i := 0; i < workerCount; i++ {
-		go func() {
-			defer wg.Done()
+		go func(id int) {
+			start := time.Now()
+			defer func() {
+				if MeasureTimings {
+					log.Printf("hash worker %d took %v", id, time.Since(start))
+				}
+				wg.Done()
+			}()
 			for j := range paths {
 				hash, err := hashFunc(j.path)
 				if err != nil {
@@ -152,7 +165,7 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 					LastModified: j.modTime,
 				}
 			}
-		}()
+		}(i)
 	}
 
 	go func() {
