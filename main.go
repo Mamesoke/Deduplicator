@@ -25,6 +25,8 @@ func main() {
 	dir := flag.String("dir", "", "Ruta del directorio a analizar")
 	format := flag.String("format", "pretty", "Formato de salida: pretty | json")
 	hashAlg := flag.String("hash", "sha256", "Algoritmo de hash: sha256 | sha1 | sha512 | md5")
+	deleteFlag := flag.Bool("delete", false, "Eliminar automáticamente los archivos duplicados")
+	dryRun := flag.Bool("dry-run", false, "Simular la eliminación sin borrar archivos")
 	var excludes multiFlag
 	flag.Var(&excludes, "exclude", "Patrones o rutas a excluir (puede usarse varias veces)")
 	flag.Parse()
@@ -85,6 +87,18 @@ func main() {
 	default:
 		fmt.Printf("Formato no reconocido: %s\n", *format)
 		os.Exit(1)
+	}
+
+	if *deleteFlag {
+		removed, err := deduplicator.DeleteDuplicates(dupes, *dryRun)
+		if err != nil {
+			log.Fatalf("Error al eliminar duplicados: %v", err)
+		}
+		if *dryRun {
+			fmt.Printf("Se eliminarían %d archivos duplicados.\n", len(removed))
+		} else {
+			fmt.Printf("Se eliminaron %d archivos duplicados.\n", len(removed))
+		}
 	}
 	// Mostrar resultados mejorados
 	/*
