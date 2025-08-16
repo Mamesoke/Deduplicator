@@ -61,9 +61,11 @@ func main() {
 	}
 
 	// Escanear archivos y calcular hashes
-	files, err := deduplicator.WalkAndHash(*dir, []string(excludes), hashFunc)
-	if err != nil {
-		log.Printf("Error durante el escaneo: %v", err)
+	files, errs := deduplicator.WalkAndHash(*dir, []string(excludes), hashFunc)
+	if len(errs) > 0 {
+		for _, err := range errs {
+			log.Printf("Error durante el escaneo: %v", err)
+		}
 		exitCode = 1
 	}
 
