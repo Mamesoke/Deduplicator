@@ -13,12 +13,9 @@ import (
 // WalkAndHash recorre el directorio, agrupa primero por tamaño y solo
 // calcula el hash de los archivos que comparten tamaño con al menos otro.
 func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, error)) ([]FileInfo, error) {
-	isExcluded := func(path string) bool {
+	isExcluded := func(name string) bool {
 		for _, pattern := range excludes {
-			if ok, _ := filepath.Match(pattern, path); ok {
-				return true
-			}
-			if ok, _ := filepath.Match(pattern, filepath.Base(path)); ok {
+			if ok, _ := filepath.Match(pattern, name); ok {
 				return true
 			}
 		}
@@ -55,7 +52,7 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 				return nil
 			}
 			visited[target] = struct{}{}
-			if isExcluded(target) {
+			if isExcluded(filepath.Base(target)) {
 				return nil
 			}
 			info, err := os.Stat(target)
@@ -73,12 +70,12 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 			return nil
 		}
 		if d.IsDir() {
-			if isExcluded(path) {
+			if isExcluded(d.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if isExcluded(path) {
+		if isExcluded(d.Name()) {
 			return nil
 		}
 		info, err := d.Info()
@@ -132,7 +129,7 @@ func WalkAndHash(root string, excludes []string, hashFunc func(string) (string, 
 		for _, group := range sizeMap {
 			if len(group) > 1 {
 				for _, j := range group {
-					if isExcluded(j.path) {
+					if isExcluded(filepath.Base(j.path)) {
 						continue
 					}
 					paths <- j
