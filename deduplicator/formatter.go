@@ -3,6 +3,8 @@ package deduplicator
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"sort"
 )
 
@@ -51,6 +53,11 @@ func PrettyPrint(dupes []DuplicateGroup) {
 
 // JSONPrint imprime el resultado en JSON estructurado
 func JSONPrint(dupes []DuplicateGroup) error {
+	return JSONPrintTo(os.Stdout, dupes)
+}
+
+// JSONPrintTo writes the duplicate report as JSON to w.
+func JSONPrintTo(w io.Writer, dupes []DuplicateGroup) error {
 	// Ordenar los grupos por desperdicio descendente sin mutar la entrada original
 	sorted := make([]DuplicateGroup, len(dupes))
 	copy(sorted, dupes)
@@ -86,6 +93,8 @@ func JSONPrint(dupes []DuplicateGroup) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(jsonData))
+	if _, err := w.Write(append(jsonData, '\n')); err != nil {
+		return err
+	}
 	return nil
 }

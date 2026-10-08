@@ -7,7 +7,7 @@ A Go command-line tool for finding duplicate files in a directory. It compares f
 - Recursively scans directories for files with matching sizes and contents.
 - Calculates hashes with SHA-256 (default), SHA-1, SHA-512, or MD5.
 - Uses multiple workers for scanning and hash calculation.
-- Stores calculated hashes in `.dedupcache.json` inside the scanned directory to speed up future scans of unchanged files.
+- Stores calculated hashes in `.dedupcache.json` inside the scanned directory to speed up future scans of unchanged files. Cache entries are specific to the selected algorithm and file modification time.
 - Prints human-readable results or a JSON report.
 - Excludes files and directories using patterns.
 - Can preview or delete the duplicates it finds.
@@ -88,11 +88,11 @@ To perform the deletion:
 go run . -dir="/path/to/scan" -delete
 ```
 
-**Warning:** deletion is permanent and does not prompt for confirmation. One file in each duplicate group is kept and the others are removed. The scan order does not guarantee which file will be kept, so review the dry-run output and make a backup before using `-delete` without `-dry-run`.
+**Warning:** deletion is permanent and does not prompt for confirmation. One file in each duplicate group is kept and the others are removed only after their contents have been compared byte-for-byte with the kept file. The scan order does not guarantee which file will be kept, so review the dry-run output and make a backup before using `-delete` without `-dry-run`.
 
 ### JSON report
 
-When duplicates are found, `-format=json` produces an object with this structure:
+With `-format=json`, the program writes a JSON report with this structure (the `groups` array and totals are empty/zero when no duplicates are found):
 
 ```json
 {
@@ -121,7 +121,7 @@ When duplicates are found, `-format=json` produces an object with this structure
 }
 ```
 
-`total_duplicated_files` counts redundant copies, not every file in the groups. `lastModified` is the Unix modification time in seconds. If no duplicates are found, the program prints a message instead of emitting a JSON object. The CLI also prints the scanned directory before the report, so its complete standard output is not pure JSON.
+`total_duplicated_files` counts redundant copies, not every file in the groups. `lastModified` is the Unix modification time in seconds. The JSON report is written to standard output; scan status, errors, and deletion messages are written to standard error, so the standard output can be piped directly to a JSON parser.
 
 ## Development and tests
 
